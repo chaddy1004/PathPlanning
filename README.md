@@ -10,7 +10,8 @@ As a prologue, here are the two algorithms in action:
 PRM, after it used A* to find the shortest path:
 
 
-![](images/prm.png | width=200)
+<img src="images/prm.png" alt="Kitten"
+	title="PRM" width="200" height="200"/>
 
 RRT, going from start to end by visiting each waypoints:
 
