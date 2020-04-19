@@ -1,5 +1,5 @@
 # PathPlanning
-When discussing robot path planning algorithms, there are two basic techniques that are used as a starting point: Probablistic Road Map (PRM), and Rapidly exploring Random Trees (RRT).
+When discussing robot path planning algorithms, there are two basic techniques that are used as a starting point: **Probablistic Road Map (PRM)**, and **Rapidly exploring Random Trees (RRT)**.
 
 Of course there  are other techniques, but I enjoy these two methods especially, since they were easy to understand, and personally help me understand graohs a lot better.
 
@@ -11,11 +11,14 @@ PRM, after it used A* to find the shortest path:
 
 
 <img src="images/prm.png" alt="Kitten"
-	title="PRM" width="200" height="200"/>
+	title="PRM" width="250" height="250"/>
 
 RRT, going from start to end by visiting each waypoints:
 
 ![][rrt]
 
 [rrt]: images/total.gif
+
+## Repository Information
+The map, represented by the file by [sim_map.pgm]
 

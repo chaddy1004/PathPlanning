@@ -1,6 +1,7 @@
 import numpy as np
 from utils import distance
 
+# the node class used to form a graph for performing A*
 class Node:
     def __init__(self, coord_xy, end_xy, graph):
         self.key = tuple(coord_xy)

@@ -1,5 +1,4 @@
 import numpy as np
-from read_pgm import read_pgm
 import imageio
 from skimage.draw import line_aa, circle, line, circle_perimeter
 from tqdm import tqdm
@@ -7,9 +6,13 @@ from node import Node
 from utils import xy2rc, rc2xy, distance, array_in_list, bold_filter, are_graphs_connected, find_closest_node
 from heapq import heappush, heappop, heapify
 import copy
-from robot import Robot
-
+import os
 np.random.seed(19940513)
+
+
+def read_map_to_nparray(uri):
+    map_img = imageio.imread(uri)
+    return np.array(map_img)
 
 
 class RRT:
@@ -25,12 +28,9 @@ class RRT:
 
         self.x_dim = self.sim_map.shape[1]
         self.y_dim = self.sim_map.shape[0]
-        self.r = 25
         self.radius = 3  # 0.45m to pixel thickness
         self.step = 15
         self.obstacles = np.argwhere(self.sim_map_bolded == 0)  # in rc convention
-
-        self.robot = Robot(np.array([5, 5, np.deg2rad(45)]), dt=0.1)
 
         for view_point_xy in self.waypoints_xy:
             view_point_rc = xy2rc(view_point_xy)
@@ -39,6 +39,12 @@ class RRT:
         return
 
     def check_collision(self, p1xy, p2xy):
+        """
+        checks collision by checking if line drawn using Bresenham algorithm intersects with any obstacle
+        :param p1xy: point 1 in xy coordinate
+        :param p2xy: point 2 in xy coordinate
+        :return: Boolean whether there is a collision present or not between the two points
+        """
         p1rc = xy2rc(p1xy)
         p2rc = xy2rc(p2xy)
         rr, cc = line(int(p1rc[0]), int(p1rc[1]), int(p2rc[0]), int(p2rc[1]))
@@ -49,6 +55,12 @@ class RRT:
         return False
 
     def rrt(self, graph_num, visualize=True):
+        """
+        Rapidly expands graph from start and end node, and updates each graph
+        :param graph_num: Index used for saving into file
+        :param visualize: Whether to visualize the graph
+        :return: True
+        """
         graphs_connected = False
         iteration = 0
         map = np.copy(self.sim_map_bolded)
@@ -79,11 +91,21 @@ class RRT:
         return True
 
     def _update_graph(self, main_graph, target_graph, radius):
+        """
+        Updates graph during RRT operation
+        :param main_graph: The graph to operate on currently
+        :param target_graph: The opposing graph
+        :param radius: The size of step its taking
+        :return: Boolean whether the current graph and target graph is connected or not
+        """
         graph_connected = False
         new_node_xy = [np.random.randint(0, self.x_dim), np.random.randint(0, self.y_dim)]
+        # It samples random point, and finds the closest vertex that the graph has to the sampled point
         closest_node_xy, dist = find_closest_node(main_graph, new_node_xy)
+        # finds a direction vector from the found closest point, and the sampled random point
         diff = new_node_xy - closest_node_xy
         dir_vec = diff / np.linalg.norm(diff)
+        # Places a new vertex by taking a step in the direction by factor of "radius"
         dir_vec = dir_vec * radius
         new_node_xy = closest_node_xy + dir_vec
         new_node_xy = new_node_xy.astype(int)
@@ -92,8 +114,10 @@ class RRT:
             main_graph[tuple(new_node_xy)] = []
             main_graph[tuple(new_node_xy)].append((closest_node_xy, dist))
 
+        # finds the closest node from the opposing graph from the new vertex
         closest_node_from_target_xy, dist_2 = find_closest_node(target_graph, new_node_xy)
         if dist_2 < radius:
+            # If the newly updated point is also close enough to the opposite graph, the two graph is connected
             if not self.check_collision(new_node_xy, closest_node_from_target_xy):
                 target_graph[tuple(closest_node_from_target_xy)].append((new_node_xy, dist_2))
                 target_graph[tuple(new_node_xy)] = []
@@ -114,15 +138,18 @@ class RRT:
                     for node in connections:
                         if (tuple(node[0])) not in visited:
                             stack.append(node)
-
                 graph_connected = True
-
         return graph_connected
 
-    def find_shortest_paths(self):
+    def find_shortest_paths(self, visualize=True):
+        """
+        Finds shortest path
+        :return: None
+        """
         iteration = 0
         stacks = []
-        for start, end in zip(self.waypoints_xy[:-1], self.waypoints_xy[1:]):
+        # Goes through the waypoint in pairs, and finds the shortest path between those two waypoints
+        for graph_i, (start, end) in enumerate(zip(self.waypoints_xy[:-1], self.waypoints_xy[1:])):
             print(start, end)
             start_key = tuple(start)
             end_key = tuple(end)
@@ -130,13 +157,49 @@ class RRT:
             self.graph_end_xy = {}
             self.graph_start_xy[start_key] = []
             self.graph_end_xy[end_key] = []
-            self.rrt(iteration, visualize=False)
+            if visualize:
+                os.mkdir(f"plots/rrt/{graph_i}")
+            self.rrt(iteration, visualize=visualize)
             stack = self.a_star(start, end)
             stacks.append(stack)
             self.visualize_connection(iteration)
             iteration += 1
         self.shortest_path_stacks = copy.deepcopy(stacks)
         self.visualize_shortest_paths(stacks)
+
+    # A* algorithm implementation using priority queue
+    def a_star(self, start_xy, end_xy):
+        """
+        A* Algorithm using priority queue
+        :param start_xy: Strating point in xy coordinate
+        :param end_xy: Ending point in xy coordinate
+        :return: Stack that represents the shortest path
+        """
+        start_node = Node(start_xy, end_xy, self.graph_start_xy)
+        start_node.shortest_dist = 0
+        start_node.update_total_cost()
+        pq = []
+        pq.append(start_node)
+        heapify(pq)
+        stack = []
+        while pq:
+            current_node = heappop(pq)
+            if (current_node.coord_xy == end_xy).all():
+                print("it's done ")
+                iterator = current_node
+                while iterator:
+                    stack.append(iterator.coord_xy)
+                    iterator = iterator.prev_node
+                break
+
+            for neighbour, dist in current_node.connections:
+                neighbouring_node = Node(neighbour, end_xy, self.graph_start_xy)
+                if current_node.shortest_dist + dist < neighbouring_node.shortest_dist:
+                    neighbouring_node.shortest_dist = current_node.shortest_dist + dist
+                    neighbouring_node.update_total_cost()
+                    neighbouring_node.prev_node = current_node
+                    heappush(pq, neighbouring_node)
+        return stack
 
     def visualize_shortest_paths(self, paths):
         for stack in paths:
@@ -197,66 +260,13 @@ class RRT:
         img = np.append(r_ch[..., np.newaxis], np.append(g_ch[..., np.newaxis], map[..., np.newaxis], -1), axis=-1)
         imageio.imwrite(name, img)
 
-    def a_star(self, start_xy, end_xy):
-        start_node = Node(start_xy, end_xy, self.graph_start_xy)
-        start_node.shortest_dist = 0
-        start_node.update_total_cost()
-        pq = []
-        pq.append(start_node)
-        heapify(pq)
-        stack = []
-        while pq:
-            current_node = heappop(pq)
-            if (current_node.coord_xy == end_xy).all():
-                print("it';s done ")
-                iterator = current_node
-                while iterator:
-                    stack.append(iterator.coord_xy)
-                    iterator = iterator.prev_node
-                break
-
-            for neighbour, dist in current_node.connections:
-                neighbouring_node = Node(neighbour, end_xy, self.graph_start_xy)
-                if current_node.shortest_dist + dist < neighbouring_node.shortest_dist:
-                    neighbouring_node.shortest_dist = current_node.shortest_dist + dist
-                    neighbouring_node.update_total_cost()
-                    neighbouring_node.prev_node = current_node
-                    heappush(pq, neighbouring_node)
-        return stack
-
-    def _traverse(self, path):
-        path = path[::-1]
-        for start, end in zip(path[:-1], path[1:]):
-            direction = end - start
-            self.robot.set_heading_angle(direction)
-            self.robot.rotate_to_heading_angle()
-            at_destination = False
-            while not at_destination:
-                self.robot.move_straight_xy(0.1)
-                current_pos_xy = np.array([self.robot.state[0], self.robot.state[1]])
-                error = np.linalg.norm(end - current_pos_xy)
-                print(error, current_pos_xy, end)
-                if np.linalg.norm(end - current_pos_xy) < 5:
-                    at_destination = True
-                current_pos_rc = xy2rc(current_pos_xy)
-                self.traverse_map[int(current_pos_rc[0]), int(current_pos_rc[1])] = 0
-        return
-
-    def traverse(self):
-        for path in self.shortest_path_stacks:
-            self._traverse(path)
-        imageio.imwrite("plots/rrt/robot_traversal.png", self.traverse_map)
-        return
-
 
 def main():
-    sim_map = read_pgm('sim_map.pgm')
-    sim_map = np.array(sim_map)
+    sim_map = read_map_to_nparray('images/map.png')
     view_points_xy = [np.array([5, 5]), np.array([9, 90]), np.array([90, 90]), np.array([45, 50]), np.array([90, 10])]
 
     rrt = RRT(view_points_xy, sim_map)
-    rrt.find_shortest_paths()
-    rrt.traverse()
+    rrt.find_shortest_paths(visualize=False)
 
 
 if __name__ == "__main__":
